@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader, Dataset
 
 
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import mean_squared_error
 
 import math
 import numpy as np
@@ -123,7 +124,9 @@ def preprocessing():
     X = pd.concat([df.loc[:]["time_H"], df.loc[:]["Res_R"]], axis=1)
 
     dataTrain = X[:-24*7]
-    dataTest = X[-24*7:]
+    dataTest = X[:]
+
+    print(dataTest.shape)
 
     XTrain = dataTrain[:len(dataTrain) - 1]
     TTrain = dataTrain[1:len(dataTrain)]
@@ -134,6 +137,8 @@ def preprocessing():
     std = StandardScaler()
     std.fit(XTrain)
     XTrain_scaled = std.transform(XTrain)
+
+    std.fit(XTest)
     XTest_scaled = std.transform(XTest)
 
     # std.fit(TTrain)
@@ -200,9 +205,18 @@ def main_worker(gpu, n_gpus, XTrain_scaled):
         print("loss: {:0.6f}".format(batchloss.cpu().item() / len(train_loader)))
 
         if i % 10 == 0:
-            torch.save(model, "./model_{%d}.pt" % i)
+            torch.save(model.state_dict(), "./model_{%d}.pt" % i)
 
-def evaluate(gpu, n_gpus, XTest_scaled, length, std):
+        
+def MAPEval(y_pred, y_true):
+    return np.mean(np.abs((y_true - y_pred) / y_true)) * 100
+
+def RMSE(y_pred, y_true):
+    return mean_squared_error(y_pred, y_true)**0.5
+
+def evaluate(gpu, n_gpus, XTest_scaled, std):
+    batch_size = 64
+
     print("Evaluate:", XTest_scaled)
 
     print("n_gpus:", n_gpus)
@@ -217,40 +231,56 @@ def evaluate(gpu, n_gpus, XTest_scaled, length, std):
         rank=gpu
         )
     
-    model = TFModel(24*7*2, 24*7, 512, 8, 4, 0.1)
+    # model = TFModel(24*7*2, 24*7, 512, 8, 4, 0.1)
     
-    torch.cuda.set_device(gpu)
+    # torch.cuda.set_device(gpu)
 
-    model = model.cuda(gpu)
-    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[gpu], find_unused_parameters=True)
+    
+    # model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[gpu], find_unused_parameters=True)
 
-    model.load_state_dict(
-        torch.load("./model_{90}.pt")
-    )
-
-    input = torch.tensor(XTest_scaled[:]).reshape(1,-1,1).to(device).float().to(device)
-    output = torch.tensor(XTest_scaled[-1].reshape(1,-1,1)).float().to(device)
+    model = torch.load("./back/model_{90}.pt")
+    model = model.cuda("cuda:0")
+    # model.load_state_dict(
+    #     torch.load("./model_{90}.pt")
+    # )
+    
+    # results = None
 
     model.eval()
 
-    for i in range(length):
-        src_mask = model.generate_square_subsequent_mask(input.shape[1]).to(device)
-        tgt_mask = model.generate_square_subsequent_mask(output.shape[1]).to(device)
 
-        predictions = model(input, output, src_mask, tgt_mask).transpose(0,1)
-        predictions = predictions[:, -1:, :]
-        output = torch.cat([output, predictions.to(device)], axis=1)
+    # for i in range(0, 50):
+    torch.distributed.barrier()
+    input = torch.tensor(XTest_scaled[-24*7*2:, 1]).reshape(1,-1,1).float().to("cuda:0")
 
+    print("input shape:", input.shape)
 
-    result = torch.squeeze(output, axis=0).detach().cpu().numpy()[1:]
-    result = std.inverse_transform(result)
+    src_mask = model.module.generate_square_subsequent_mask(input.shape[1]).to("cuda:0")
 
-    plt.plot(result)
+    print("src_mask:", src_mask)
+    print("src_mask_shape:", src_mask.shape)
+
+    predictions = model(input, src_mask)
+
+    result = predictions.detach().cpu().numpy()
+    # result = std.inverse_transform(result)[0]
+
+    # real = XTest_scaled
+
+    # real = XTest_scaled.inverse_transform(XTest_scaled.reshape(-1, 1))[:, 0]
+
+    print(MAPEval(result[0][:-7], XTest_scaled[-24*7*1+7:, 1]))
+    print(RMSE(result[0][:-7], XTest_scaled[-24*7*1+7:, 1]))
+
+    # plt.plot(result, color="red")
+
+    plt.figure()
+    plt.scatter([i for i in range(len(result[0][:-7]))], result[0][:-7], color="red")
+    plt.scatter([i for i in range(len(XTest_scaled[-24*7*1+7:, 1]))], XTest_scaled[-24*7*1+7:, 1], color="blue")
     plt.show()
     plt.savefig("./result.png")
-    
 
-    return torch.squeeze(output, axis=0).detach().cpu().numpy()[1:]
+
 
 
 if __name__ == "__main__":
@@ -264,6 +294,7 @@ if __name__ == "__main__":
     # torch.multiprocessing.spawn(main_worker, nprocs=n_gpus, args=(n_gpus, XTrain_scaled))
 
     ### Test
-    torch.multiprocessing.spawn(evaluate, nprocs=n_gpus, args=(n_gpus, XTest_scaled, 24*7, std))
+    torch.multiprocessing.spawn(evaluate, nprocs=n_gpus, args=(n_gpus, XTest_scaled, std))
+    # evaluate(n_gpus, n_gpus, XTest_scaled, std)
 
 
