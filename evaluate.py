@@ -264,6 +264,6 @@ if __name__ == "__main__":
     # torch.multiprocessing.spawn(main_worker, nprocs=n_gpus, args=(n_gpus, XTrain_scaled))
 
     ### Test
-    torch.multiprocessing.spawn(evaluate, nprocs=n_gpus, args=(n_gpus, XTest_scaled, std))
+    torch.multiprocessing.spawn(evaluate, nprocs=n_gpus, args=(n_gpus, XTest_scaled, 24*7, std))
 
 
