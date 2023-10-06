@@ -198,7 +198,7 @@ def main_worker(gpu, n_gpus, XTrain_scaled):
         print("loss: {:0.6f}".format(batchloss.cpu().item() / len(train_loader)))
 
         if i % 10 == 0:
-            torch.save(model, "./model_{%d}.pt" % i)
+            torch.save(model.state_dict(), "./model_%d.pt" % i)
 
 if __name__ == "__main__":
     XTrain_scaled = preprocessing()[0]
