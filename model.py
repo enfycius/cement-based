@@ -12,12 +12,10 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
 n_gpus = torch.cuda.device_count()
 
-iw = 24 * 14
-ow = 24 * 7
+iw = 24*1
+ow = 1
 
 class TFModel(nn.Module):
     def __init__(self, iw, ow, d_model, nhead, nlayers, dropout=0.5):
@@ -120,8 +118,8 @@ def preprocessing():
 
     X = pd.concat([df.loc[:]["time_H"], df.loc[:]["Res_R"]], axis=1)
 
-    dataTrain = X[:-24*7]
-    dataTest = X[-24*7:]
+    dataTrain = X[:39974]
+    dataTest = X[39974:]
 
     XTrain = dataTrain[:len(dataTrain) - 1]
     TTrain = dataTrain[1:len(dataTrain)]
@@ -143,17 +141,15 @@ def preprocessing():
 
 
 def main_worker(gpu, n_gpus, XTrain_scaled):
-    epochs = 100
-    batch_size = 64
+    epochs = 150
+    batch_size = 128
     num_worker = 8
-    lr = 1e-4
+    lr = 1e-5
 
     print("Training:", XTrain_scaled)
 
     print("n_gpus:", n_gpus)
     print("Use GPU: {} for training".format(gpu))
-
-    # global XTrain_scaled, XTest_scaled
 
     batch_size = int(batch_size / n_gpus)
     num_worker = int(num_worker / n_gpus)
@@ -165,7 +161,7 @@ def main_worker(gpu, n_gpus, XTrain_scaled):
         rank=gpu
         )
     
-    model = TFModel(24*7*2, 24*7, 512, 8, 4, 0.1)
+    model = TFModel(24*1, 1, 512, 8, 4, 0.1)
     
     torch.cuda.set_device(gpu)
 
@@ -197,8 +193,9 @@ def main_worker(gpu, n_gpus, XTrain_scaled):
         progress.set_description("loss: {:0.6f}".format(batchloss.cpu().item() / len(train_loader)))
         print("loss: {:0.6f}".format(batchloss.cpu().item() / len(train_loader)))
 
-        if i % 5 == 0:
-            torch.save(model.state_dict(), "./model_%d.pt" % i)
+        if gpu == 0:
+            if i % 5 == 0:
+                torch.save(model.module.state_dict(), "./back4/model_%d.pth" % i)
 
 if __name__ == "__main__":
     XTrain_scaled = preprocessing()[0]

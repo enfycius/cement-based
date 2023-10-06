@@ -15,12 +15,10 @@ from tqdm import tqdm
 
 import matplotlib.pyplot as plt
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
 n_gpus = torch.cuda.device_count()
 
-iw = 24 * 14
-ow = 24 * 7
+iw = 24 * 1
+ow = 1
 
 class TFModel(nn.Module):
     def __init__(self, iw, ow, d_model, nhead, nlayers, dropout=0.5):
@@ -112,6 +110,12 @@ class windowDataset(Dataset):
 
         self.len = len(X)
 
+        plt.figure()
+
+        plt.scatter([i for i in range(len(Y.flatten()))], Y.flatten())
+        plt.show()
+        plt.savefig("./test.png")
+
     def __getitem__(self, i):
         return self.x[i], self.y[i]
     
@@ -123,8 +127,8 @@ def preprocessing():
 
     X = pd.concat([df.loc[:]["time_H"], df.loc[:]["Res_R"]], axis=1)
 
-    dataTrain = X[:-24*7]
-    dataTest = X[:]
+    dataTrain = X[:39974]
+    dataTest = X[39974:]
 
     print(dataTest.shape)
 
@@ -137,76 +141,9 @@ def preprocessing():
     std = StandardScaler()
     std.fit(XTrain)
     XTrain_scaled = std.transform(XTrain)
-
-    std.fit(XTest)
     XTest_scaled = std.transform(XTest)
 
-    # std.fit(TTrain)
-    # TTrain_scaled = std.transform(TTrain)
-    # TTest_scaled = std.transform(TTest)
-
-
     return [XTrain_scaled, XTest_scaled, std]
-
-
-def main_worker(gpu, n_gpus, XTrain_scaled):
-    epochs = 100
-    batch_size = 64
-    num_worker = 8
-    lr = 1e-4
-
-    print("Training:", XTrain_scaled)
-
-    print("n_gpus:", n_gpus)
-    print("Use GPU: {} for training".format(gpu))
-
-    # global XTrain_scaled, XTest_scaled
-
-    batch_size = int(batch_size / n_gpus)
-    num_worker = int(num_worker / n_gpus)
-
-    torch.distributed.init_process_group(
-        backend='nccl',
-        init_method='tcp://221.159.102.58:6006',
-        world_size=n_gpus,
-        rank=gpu
-        )
-    
-    model = TFModel(24*7*2, 24*7, 512, 8, 4, 0.1)
-    
-    torch.cuda.set_device(gpu)
-
-    model = model.cuda(gpu)
-    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[gpu], find_unused_parameters=True)
-
-    train_dataset = windowDataset(XTrain_scaled[:, 1], input_window=iw, output_window=ow, stride=1)
-    train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=n_gpus, sampler=train_sampler)
-
-    criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-
-    model.train()
-
-    progress = tqdm(range(epochs))
-
-    for i in progress:
-        batchloss = 0.0
-        
-        for (inputs, outputs) in train_loader:
-            optimizer.zero_grad()
-            src_mask = model.module.generate_square_subsequent_mask(inputs.shape[1]).to(gpu)
-            result = model(inputs.float().to(gpu), src_mask)
-            loss = criterion(result, outputs[:,:,0].float().to(gpu))
-            loss.backward()
-            optimizer.step()
-            batchloss += loss
-        progress.set_description("loss: {:0.6f}".format(batchloss.cpu().item() / len(train_loader)))
-        print("loss: {:0.6f}".format(batchloss.cpu().item() / len(train_loader)))
-
-        if i % 10 == 0:
-            torch.save(model.state_dict(), "./model_{%d}.pt" % i)
-
         
 def MAPEval(y_pred, y_true):
     return np.mean(np.abs((y_true - y_pred) / y_true)) * 100
@@ -214,74 +151,66 @@ def MAPEval(y_pred, y_true):
 def RMSE(y_pred, y_true):
     return mean_squared_error(y_pred, y_true)**0.5
 
-def evaluate(gpu, n_gpus, XTest_scaled, std):
+def evaluate(gpu, n_gpus, XTest_scaled, XTrain_scaled):
+    num_worker = 8
     batch_size = 64
-
-    print("Evaluate:", XTest_scaled)
-
-    print("n_gpus:", n_gpus)
-    print("Use GPU: {} for training".format(gpu))
-
-    # global XTrain_scaled, XTest_scaled
-
-    torch.distributed.init_process_group(
-        backend='nccl',
-        init_method='tcp://221.159.102.58:6006',
-        world_size=n_gpus,
-        rank=gpu
-        )
     
-    # model = TFModel(24*7*2, 24*7, 512, 8, 4, 0.1)
-    
-    # torch.cuda.set_device(gpu)
+    model = TFModel(24*1, 1, 512, 8, 4, 0.1)
+    model.load_state_dict(torch.load("./back4/model_%d.pth" % 145))
 
-    
-    # model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[gpu], find_unused_parameters=True)
-
-    model = torch.load("./back/model_{90}.pt")
-    model = model.cuda("cuda:0")
-    # model.load_state_dict(
-    #     torch.load("./model_{90}.pt")
-    # )
-    
-    # results = None
+    model.to(gpu)
 
     model.eval()
 
+    test_dataset = windowDataset(XTest_scaled[:, 1], input_window=iw, output_window=ow, stride=1)
+    test_sampler = torch.utils.data.SequentialSampler(test_dataset)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=num_worker, sampler=test_sampler)
 
-    # for i in range(0, 50):
-    torch.distributed.barrier()
-    input = torch.tensor(XTest_scaled[-24*7*2:, 1]).reshape(1,-1,1).float().to("cuda:0")
+    train_dataset = windowDataset(XTrain_scaled[:, 1], input_window=iw, output_window=ow, stride=1)
+    train_sampler = torch.utils.data.SequentialSampler(train_dataset)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=num_worker, sampler=train_sampler)
 
-    print("input shape:", input.shape)
+    resultsl = None
+    outputsl = None
+    
+    for i, (inputs, outputs) in enumerate(test_loader):
+        inputs = inputs.to(gpu)
+        src_mask = model.generate_square_subsequent_mask(inputs.shape[1]).to(gpu)
 
-    src_mask = model.module.generate_square_subsequent_mask(input.shape[1]).to("cuda:0")
+        predictions = model(inputs.float(), src_mask)
 
-    print("src_mask:", src_mask)
-    print("src_mask_shape:", src_mask.shape)
+        result = predictions.detach().cpu().numpy()
 
-    predictions = model(input, src_mask)
+        if i == 0:
+            resultsl = result.flatten()
+            outputsl = outputs[:, :, 0].float().numpy().flatten()
+        else:
+            resultsl = np.concatenate((resultsl, result.flatten()))
+            outputsl = np.concatenate((outputsl, outputs[:, :, 0].float().numpy().flatten()))
 
-    result = predictions.detach().cpu().numpy()
-    # result = std.inverse_transform(result)[0]
+    previousl = None
 
-    # real = XTest_scaled
+    for i, (inputs, outputs) in enumerate(train_loader):
+        if i == 0:
+            previousl = outputs[:, :, 0].float().numpy().flatten()
+        else:
+            previousl = np.concatenate((previousl, outputs[:, :, 0].float().numpy().flatten()))
 
-    # real = XTest_scaled.inverse_transform(XTest_scaled.reshape(-1, 1))[:, 0]
 
-    print(MAPEval(result[0][:-7], XTest_scaled[-24*7*1+7:, 1]))
-    print(RMSE(result[0][:-7], XTest_scaled[-24*7*1+7:, 1]))
-
-    # plt.plot(result, color="red")
+    print(MAPEval(resultsl, outputsl))
+    print(RMSE(resultsl, outputsl))
 
     plt.figure()
-    plt.scatter([i for i in range(len(result[0][:-7]))], result[0][:-7], color="red")
-    plt.scatter([i for i in range(len(XTest_scaled[-24*7*1+7:, 1]))], XTest_scaled[-24*7*1+7:, 1], color="blue")
+    plt.scatter([i for i in range(len(previousl))], previousl, color="blue")
+    plt.scatter([i for i in range(len(previousl), len(previousl) + len(resultsl))], resultsl, color="red")
     plt.show()
-    plt.savefig("./result.png")
+    plt.savefig("./result_%s.png" % "final")
 
-
-
+    plt.figure()
+    plt.scatter([i for i in range(len(previousl))], previousl, color="blue")
+    plt.scatter([i for i in range(len(previousl), len(previousl) + len(outputsl))], outputsl, color="red")
+    plt.show()
+    plt.savefig("./result_%s.png" % "outputs")
 
 if __name__ == "__main__":
     XTrain_scaled = preprocessing()[0]
@@ -294,7 +223,7 @@ if __name__ == "__main__":
     # torch.multiprocessing.spawn(main_worker, nprocs=n_gpus, args=(n_gpus, XTrain_scaled))
 
     ### Test
-    torch.multiprocessing.spawn(evaluate, nprocs=n_gpus, args=(n_gpus, XTest_scaled, std))
-    # evaluate(n_gpus, n_gpus, XTest_scaled, std)
+    # torch.multiprocessing.spawn(evaluate, nprocs=n_gpus, args=(n_gpus, XTest_scaled, std))
+    evaluate("cuda:0", "cuda:0", XTest_scaled, XTrain_scaled)
 
 
