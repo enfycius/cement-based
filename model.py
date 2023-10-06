@@ -197,7 +197,7 @@ def main_worker(gpu, n_gpus, XTrain_scaled):
         progress.set_description("loss: {:0.6f}".format(batchloss.cpu().item() / len(train_loader)))
         print("loss: {:0.6f}".format(batchloss.cpu().item() / len(train_loader)))
 
-        if i % 10 == 0:
+        if i % 5 == 0:
             torch.save(model.state_dict(), "./model_%d.pt" % i)
 
 if __name__ == "__main__":
