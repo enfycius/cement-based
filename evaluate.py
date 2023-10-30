@@ -7,6 +7,8 @@ from torch.utils.data import DataLoader, Dataset
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_absolute_error
+from sklearn.metrics import mean_absolute_percentage_error
 
 import math
 import numpy as np
@@ -53,7 +55,9 @@ class TFModel(nn.Module):
 
 
     def forward(self, src, srcmask):
+        print(src.shape)
         src = self.encoder(src)
+        print(src.shape)
         src = self.pos_encoder(src)
         output = self.transformer_encoder(src.transpose(0,1), srcmask).transpose(0,1)
         output = self.linear(output)[:,:,0]
@@ -146,7 +150,10 @@ def preprocessing():
     return [XTrain_scaled, XTest_scaled, std]
         
 def MAPEval(y_pred, y_true):
-    return np.mean(np.abs((y_true - y_pred) / y_true)) * 100
+    return mean_absolute_percentage_error(y_true, y_pred)
+
+def MAE(y_pred, y_true):
+    return mean_absolute_error(y_true, y_pred)
 
 def RMSE(y_pred, y_true):
     return mean_squared_error(y_pred, y_true)**0.5
@@ -198,19 +205,30 @@ def evaluate(gpu, n_gpus, XTest_scaled, XTrain_scaled):
 
 
     print(MAPEval(resultsl, outputsl))
+    print(MAE(resultsl, outputsl))
     print(RMSE(resultsl, outputsl))
 
     plt.figure()
-    plt.scatter([i for i in range(len(previousl))], previousl, color="blue")
-    plt.scatter([i for i in range(len(previousl), len(previousl) + len(resultsl))], resultsl, color="red")
-    plt.show()
-    plt.savefig("./result_%s.png" % "final")
+    plt.scatter([i for i in range(len(previousl))], previousl, color="blue", label="Actual")
+    plt.scatter([i for i in range(len(previousl), len(previousl) + len(resultsl))], resultsl, color="red", label="Prediction")
+    plt.xlabel("index")
+    plt.ylabel("Scaled fractional changes in resistivity")
+    plt.title("Prediction")
+    plt.legend()
 
-    plt.figure()
-    plt.scatter([i for i in range(len(previousl))], previousl, color="blue")
-    plt.scatter([i for i in range(len(previousl), len(previousl) + len(outputsl))], outputsl, color="red")
     plt.show()
     plt.savefig("./result_%s.png" % "outputs")
+
+    plt.figure()
+    plt.scatter([i for i in range(len(previousl))], previousl, color="blue", label="Actual")
+    plt.scatter([i for i in range(len(previousl), len(previousl) + len(outputsl))], outputsl, color="red", label="Ref Actual")
+    plt.xlabel("index")
+    plt.ylabel("Scaled fractional changes in resistivity")
+    plt.title("Real")
+    plt.legend()
+
+    plt.show()
+    plt.savefig("./result_%s.png" % "real")
 
 if __name__ == "__main__":
     XTrain_scaled = preprocessing()[0]
@@ -224,6 +242,6 @@ if __name__ == "__main__":
 
     ### Test
     # torch.multiprocessing.spawn(evaluate, nprocs=n_gpus, args=(n_gpus, XTest_scaled, std))
-    evaluate("cuda:0", "cuda:0", XTest_scaled, XTrain_scaled)
+    evaluate("cuda:1", "cuda:1", XTest_scaled, XTrain_scaled)
 
 
