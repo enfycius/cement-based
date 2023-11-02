@@ -18,6 +18,8 @@ import matplotlib.pyplot as plt
 
 n_gpus = torch.cuda.device_count()
 
+file_type = "5"
+
 iw = 24 * 1
 ow = 1
 
@@ -127,12 +129,12 @@ class windowDataset(Dataset):
         return self.len
     
 def preprocessing():
-    df = pd.read_excel("./HC5F0-5000 2 0.xlsx")
+    df = pd.read_excel(f"./HC5F{file_type}-5000 2 0.xlsx")
 
     X = pd.concat([df.loc[:][df.columns[-2:][0]], df.loc[:][df.columns[-2:][1]]], axis=1)
 
-    dataTrain = X[:16681]
-    dataTest = X[16681:]
+    dataTrain = X[:round(len(X)*0.8)]
+    dataTest = X[round(len(X)*0.8):]
 
     dataTrain.iloc[:, 0] = dataTrain.iloc[:, 0].index.values
     dataTrain.iloc[:, 0].astype('float64')
@@ -171,7 +173,7 @@ def evaluate(gpu, n_gpus, XTest_scaled, XTrain_scaled):
     batch_size = 64
     
     model = TFModel(24*1, 1, 512, 8, 4, 0.1)
-    model.load_state_dict(torch.load("./model-v2/back/model_%d.pth" % 145))
+    model.load_state_dict(torch.load(f"./model-v2/{file_type}/back2/model_%d.pth" % 145))
 
     model.to(gpu)
 
@@ -242,7 +244,7 @@ def evaluate(gpu, n_gpus, XTest_scaled, XTrain_scaled):
     # plt.legend()
 
     # plt.show()
-    plt.savefig("./result_%s.png" % "real")
+    plt.savefig(f"./model-v2/{file_type}/back2/result_real.png")
 
 if __name__ == "__main__":
     XTrain_scaled = preprocessing()[0]

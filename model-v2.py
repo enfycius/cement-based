@@ -14,6 +14,8 @@ from tqdm import tqdm
 
 n_gpus = torch.cuda.device_count()
 
+file_type = "5"
+
 iw = 24*1
 ow = 1
 
@@ -114,12 +116,12 @@ class windowDataset(Dataset):
         return self.len
     
 def preprocessing():
-    df = pd.read_excel("./HC5F0-5000 2 0.xlsx")
+    df = pd.read_excel(f"./HC5F{file_type}-5000 2 0.xlsx")
 
     X = pd.concat([df.loc[:][df.columns[-2:][0]], df.loc[:][df.columns[-2:][1]]], axis=1)
 
-    dataTrain = X[:16681]
-    dataTest = X[16681:]
+    dataTrain = X[:round(len(X)*0.8)]
+    dataTest = X[round(len(X)*0.8):]
 
     dataTrain.iloc[:, 0] = dataTrain.iloc[:, 0].index.values
     dataTrain.iloc[:, 0].astype('float64')
@@ -201,7 +203,7 @@ def main_worker(gpu, n_gpus, XTrain_scaled):
 
         if gpu == 0:
             if i % 5 == 0:
-                torch.save(model.module.state_dict(), "./model-v2/back/model_%d.pth" % i)
+                torch.save(model.module.state_dict(), "./model-v2/%s/back/model_%d.pth" % (file_type, i))
 
 if __name__ == "__main__":
     XTrain_scaled = preprocessing()[0]
