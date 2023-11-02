@@ -47,9 +47,9 @@ On a system equipped with two NVIDIA RTX 3080 TI GPUs, training a single net too
 
 ![Results](./assets/Results.png)
 
-| Metrics | MAPE(%) |  MAE  | RMSE  |
+| Metrics | MSLE |  MAE  | RMSE  |
 |:-------:|:-------:|:-----:|-------|
-|         |  2.399  | 0.038 | 0.057 |
+|         |  0.000967  | 0.038 | 0.057 |
 
 
 ## References
