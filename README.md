@@ -8,6 +8,26 @@ In the domain of structural health monitoring, cement-based sensors have garnere
 
 > Carbon nanotubes (CNTs); Carbonyl iron powder (CIP); Nanohybrid clusters; Multi-directional sensors; Transformer
 
+# Experiments
+
+## Materials
+
+### CNT
+
+![CNT](./assets/CNT.png)
+
+### CI and CNT/CI Hybrid Cluster
+
+![CI & CNT/CI](./assets/CI.png)
+
+### Nanofiller-Incorporated Cement Composites
+
+![Nanofiller](./assets/Nanofiller.png)
+
+## Overview of Piezoresistive Test Setup
+
+![Overview of piezoresistive test setup](./assets/piezoresistive.png)
+
 # Network
 
 ## Network Architectures
